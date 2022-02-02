@@ -2,11 +2,10 @@
 Contains caching class for Molecular Emission Data
 """
 
-from taurex.core import Singleton
 from taurex.log import Logger
 from taurex.cache.globalcache import GlobalCache
-
 from taurex.core import Singleton
+from emission_data import EmissionData
 
 
 class EmissionCache(Singleton):
@@ -15,6 +14,7 @@ class EmissionCache(Singleton):
         self._emission_data_path = None
         self.log = Logger('EmissionCache')
         self._force_active = []
+        self.emission_data_classes = [EmissionData]
 
     def set_emission_path(self, emission_data_path):
         import os
@@ -39,132 +39,79 @@ class EmissionCache(Singleton):
             return self.emission_dict[key]
         else:
             self.load_emission_data(molecule_filter=[key])
-            if key in self.opacity_dict:
-                return self.opacity_dict[key]
+            if key in self.emission_dict:
+                return self.emission_dict[key]
             else:
                 # Otherwise throw an error
                 self.log.error('Emission data for molecule %s could not be loaded', key)
-                self.log.error('It could not be found in the local dictionary %s', list(self.opacity_dict.keys()))
-                self.log.error('Or paths %s', GlobalCache()['xsec_path'])
+                self.log.error('It could not be found in the local dictionary %s', list(self.emission_dict.keys()))
+                self.log.error('Or paths %s', GlobalCache()['emission_data_path'])
                 self.log.error('Try loading it manually/ putting it in a path')
                 raise Exception('Opacity could not be loaded')
 
-    def add_emission_data(self, opacity, molecule_filter=None):
-        """
+    def add_emission_data(self, emission_data, molecule_filter=None):
 
-        Adds a :class:`~taurex.opacity.opacity.Opacity` object to the cache to then be
-        used by Taurex 3
-
-        Parameters
-        ----------
-        opacity : :class:`~taurex.opacity.opacity.Opacity`
-            Opacity object to add to the cache
-
-        molecule_filter : :obj:`list` of str , optional
-            If provided, the opacity object will only be included
-            if its molecule is in the list. Mostly used by the
-            :func:`__getitem__` for filtering
-
-        """
-        self.log.info('Reading Emission Data %s', opacity.moleculeName)
-        if opacity.moleculeName in self.opacity_dict:
+        self.log.info('Reading Emission Data %s', emission_data.molecule_name)
+        if emission_data.molecule_name in self.emission_dict:
             self.log.warning('Emission data with name %s already in emission dictionary %s skipping',
-                             opacity.moleculeName,
-                             self.opacity_dict.keys())
+                             emission_data.molecule_name,
+                             self.emission_dict.keys())
             return
         if molecule_filter is not None:
-            if opacity.moleculeName in molecule_filter:
-                self.log.info('Loading emission data %s into model', opacity.moleculeName)
-                self.opacity_dict[opacity.moleculeName] = opacity
+            if emission_data.molecule_name in molecule_filter:
+                self.log.info('Loading emission data %s into model', emission_data.molecule_name)
+                self.emission_dict[emission_data.molecule_name] = emission_data
         else:
-            self.log.info('Loading emission data %s into model', opacity.moleculeName)
-            self.opacity_dict[opacity.moleculeName] = opacity
+            self.log.info('Loading emission data %s into model', emission_data.molecule_name)
+            self.emission_dict[emission_data.molecule_name] = emission_data
 
     def find_list_of_molecules(self):
-        from glob import glob
-        import os
-        from taurex.parameter.classfactory import ClassFactory
-        opacity_klasses = ClassFactory().opacityKlasses
 
         molecules = []
 
-        for c in opacity_klasses:
+        for c in self.emission_data_classes:
             molecules.extend([x[0] for x in c.discover()])
 
         forced = self._force_active or []
-        return set(molecules + forced + list(self.opacity_dict.keys()))
+        return set(molecules + forced + list(self.emission_dict.keys()))
 
     def load_emission_data_from_path(self, path, molecule_filter=None):
 
-        from taurex.parameter.classfactory import ClassFactory
-
-        cf = ClassFactory()
-
-        opacity_klass_list = sorted(cf.opacityKlasses,
-                                    key=lambda x: x.priority())
-
-        for c in opacity_klass_list:
+        for c in self.emission_data_classes:
 
             for mol, args in c.discover():
                 self.log.debug('Klass: %s %s', mol, args)
                 op = None
-                if mol in molecule_filter and mol not in self.opacity_dict:
+                if mol in molecule_filter and mol not in self.emission_dict:
                     if not isinstance(args, (list, tuple,)):
                         args = [args]
                     op = c(*args)
 
-                if op is not None and op.moleculeName not in self.opacity_dict:
+                if op is not None and op.molecule_name not in self.emission_dict:
                     self.add_emission_data(op, molecule_filter=molecule_filter)
                 op = None  # Ensure garbage collection when run once
 
-    def load_emission_data(self, opacities=None, opacity_path=None, molecule_filter=None):
-        """
-        Main function to use when loading molecular opacities. Handles both
-        cross sections and paths. Handles lists of either so lists of
-        :class:`~taurex.opacity.opacity.Opacity` objects or lists of paths can be used
-        to load multiple files/objects
+    def load_emission_data(self, emission_data=None, emiss_path=None, molecule_filter=None):
 
+        if emiss_path is None:
+            emiss_path = GlobalCache()['emission_data_path']
 
-        Parameters
-        ----------
-        opacities : :class:`~taurex.opacity.opacity.Opacity` or :obj:`list` of :class:`~taurex.opacity.opacity.Opacity` , optional
-            Object(s) to include in cache
-
-        opacity_path : str or :obj:`list` of str, optional
-            search path(s) to look for molecular opacities
-
-        molecule_filter : :obj:`list` of str , optional
-            If provided, the opacity will only be loaded
-            if its molecule is in this list. Mostly used by the
-            :func:`__getitem__` for filtering
-
-        """
-        from taurex.opacity import Opacity
-
-        if opacity_path is None:
-            opacity_path = GlobalCache()['xsec_path']
-
-        if opacities is not None:
-            if isinstance(opacities, (list,)):
-                self.log.debug('Opacity passed is list')
-                for opacity in opacities:
-                    self.add_emission_data(opacity, molecule_filter=molecule_filter)
-            elif isinstance(opacities, Opacity):
-                self.add_emission_data(opacities, molecule_filter=molecule_filter)
+        if emission_data is not None:
+            if isinstance(emission_data, (list,)):
+                self.log.debug('Emission passed is list')
+                for emission in emission_data:
+                    self.add_emission_data(emission, molecule_filter=molecule_filter)
+            elif isinstance(emission_data, EmissionData):
+                self.add_emission_data(emission_data, molecule_filter=molecule_filter)
             else:
                 self.log.error('Unknown type %s passed into opacities, should be a list, single \
-                     opacity or None if reading a path', type(opacities))
+                     opacity or None if reading a path', type(emission_data))
                 raise Exception('Unknown type passed into opacities')
         else:
-            self.load_emission_data_from_path(opacity_path, molecule_filter=molecule_filter)
-            # if isinstance(opacity_path, str):
-            #     self.load_opacity_from_path(opacity_path, molecule_filter=molecule_filter)
-            # elif isinstance(opacity_path, (list,)):
-            #     for path in opacity_path:
-            #         self.load_opacity_from_path(path, molecule_filter=molecule_filter)
+            self.load_emission_data_from_path(emiss_path, molecule_filter=molecule_filter)
 
     def clear_cache(self):
         """
         Clears all currently loaded cross-sections
         """
-        self.opacity_dict = {}
+        self.emission_dict = {}
