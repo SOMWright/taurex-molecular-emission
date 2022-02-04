@@ -81,7 +81,6 @@ class MolecularEmissionModel(SimpleForwardModel):
         return self.evaluate_emission(native_grid, False)
 
     def evaluate_emission(self, wngrid, return_contrib):
-        from taurex.util.util import compute_dz
 
         dz = self.deltaz
 
@@ -143,7 +142,6 @@ class MolecularEmissionModel(SimpleForwardModel):
             else:
                 tau[layer] += _tau[0]
 
-            # TODO Need to be careful with the units on the Opacity Class Output - there's the conversion from cm^2 to m^2
             self.debug('dtau[%s]=%s', layer, dtau)
             BB = black_body(wngrid, temperature[layer]) / PI
             self.debug('BB[%s]=%s,%s', layer, temperature[layer], BB)
